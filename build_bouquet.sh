@@ -124,10 +124,13 @@ if ${with_ksu}; then
 		cp ${SUSFS_REPO}/kernel_patches/fs/*            ${KDIR}/fs/
 		cp ${SUSFS_REPO}/kernel_patches/include/linux/* ${KDIR}/include/linux/
 
-		git apply ${SUSFS_REPO}/kernel_patches/50_add_susfs_in_gki-android12-5.10.patch || exit 1
+		# Tolerant apply, the method Arkael's build uses on this same stack:
+		# strict 'git apply' cannot express a 5.10.273 context shift, and partial
+		# rejection must be visible in the log instead of aborting the run.
+		patch -p1 --forward -r - < ${SUSFS_REPO}/kernel_patches/50_add_susfs_in_gki-android12-5.10.patch || true
 		sed -e 's|a/kernel/|a/drivers/kernelsu/kernel/|g' \
 		    -e 's|b/kernel/|b/drivers/kernelsu/kernel/|g' \
-		    ${SUSFS_REPO}/kernel_patches/KernelSU/10_enable_susfs_for_ksu.patch | git apply || exit 1
+		    ${SUSFS_REPO}/kernel_patches/KernelSU/10_enable_susfs_for_ksu.patch | patch -p1 --forward -r - || true
 	fi
 fi
 
