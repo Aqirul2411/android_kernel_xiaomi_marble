@@ -94,6 +94,7 @@ jobs:
       - name: Build Image with our KSU-Next + SUSFS
         run: |
           export PATH="$HOME/build_toolchain/llvm-23.1.6-x86_64/bin:$PATH"
+          chmod +x build_bouquet.sh
           ./build_bouquet.sh --susfs -- Image
           ls -l ~/Bouquet_marble_out/ | head -12
           cp ~/Bouquet_marble_out/Image_susfs* ./Image 2>/dev/null || cp ~/Bouquet_marble_out/Image . || true
