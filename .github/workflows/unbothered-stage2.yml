@@ -1,0 +1,106 @@
+name: Build Unbothered (melt stage2)
+
+# Stage 2: melt-rebase + OUR root stack.
+#
+# Same base and toolchain as stage 1 (his LLVM 23.1.6, his LTO setting - his
+# defconfig was tuned against that compiler, so it is not a variable we touch
+# while proving the base).
+#
+# The only additions are the two pins this project already runs:
+#   KernelSU-Next 12f302e0  (pershoot/KernelSU-Next, dev-susfs)
+#   SUSFS         5419f4ee  (simonpunk/susfs4ksu, gki-android12-5.10)
+# build_bouquet.sh takes them from ~/KernelSU and ~/susfs4ksu.
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [unbothered-stage2]
+
+env:
+  KSUN_SHA: 12f302e0ef88c8719960a1428aac7ef26c4b6eef
+  SUSFS_SHA: 5419f4ee97cc8bf7ca67a9ff207f39653d7784f4
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    steps:
+      - name: Restore Slim LLVM
+        id: llvm-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/build_toolchain/llvm-23.1.6-x86_64.tar.xz
+          key: llvm-23.1.6-x86_64
+
+      - name: Download Slim LLVM
+        if: steps.llvm-cache.outputs.cache-hit != 'true'
+        run: |
+          sudo apt-get update -o Acquire::Retries=5 || true
+          sudo apt-get install -y --no-install-recommends xz-utils ca-certificates git || true
+          mkdir -p ~/build_toolchain
+          cd ~/build_toolchain
+          ok=0
+          for url in \
+            https://cdn.kernel.org/pub/tools/llvm/files/llvm-23.1.6-x86_64.tar.xz \
+            https://mirrors.edge.kernel.org/pub/tools/llvm/files/llvm-23.1.6-x86_64.tar.xz \
+            https://mirrors.kernel.org/pub/tools/llvm/files/llvm-23.1.6-x86_64.tar.xz ; do
+            echo "trying $url"
+            if curl -fL --retry 4 --retry-delay 5 --connect-timeout 30 \
+                 --max-time 900 -o llvm-23.1.6-x86_64.tar.xz "$url"; then ok=1; break; fi
+          done
+          [ "$ok" = "1" ] || { echo "::error::llvm download failed"; exit 1; }
+
+      - name: Prepare toolchain
+        run: |
+          mkdir -p ~/.local/bin
+          cd ~/build_toolchain && tar -xJf ./llvm-23.1.6-x86_64.tar.xz
+
+      - name: Fetch our pinned root stack
+        run: |
+          set -e
+          git init -q ~/KernelSU
+          cd ~/KernelSU
+          git remote add origin https://github.com/pershoot/KernelSU-Next.git
+          git fetch -q --depth 50 origin "$KSUN_SHA"
+          git checkout -q FETCH_HEAD
+          echo "KernelSU-Next $(git rev-parse --short HEAD)"
+
+          git init -q ~/susfs4ksu
+          cd ~/susfs4ksu
+          git remote add origin https://gitlab.com/simonpunk/susfs4ksu.git
+          git fetch -q --depth 50 origin "$SUSFS_SHA"
+          git checkout -q FETCH_HEAD
+          echo "susfs $(git rev-parse --short HEAD)"
+          ls kernel_patches/ | head -5
+
+      - name: Check out
+        uses: actions/checkout@v4
+
+      - name: Fetch build_bouquet.sh from the CI branch
+        run: |
+          git fetch --depth 1 origin bouquet_ci
+          git show FETCH_HEAD:build_bouquet.sh > build_bouquet.sh
+          chmod +x build_bouquet.sh
+
+      - name: Build Image with our KSU-Next + SUSFS
+        run: |
+          export PATH="$HOME/build_toolchain/llvm-23.1.6-x86_64/bin:$PATH"
+          ./build_bouquet.sh --susfs -- Image
+          ls -l ~/Bouquet_marble_out/ | head -12
+          cp ~/Bouquet_marble_out/Image_susfs* ./Image 2>/dev/null || cp ~/Bouquet_marble_out/Image . || true
+
+      - name: Config facts
+        run: |
+          for s in CONFIG_KSU CONFIG_KSU_SUSFS CONFIG_KSU_SUSFS_SUS_PATH \
+                   CONFIG_SCHED_BORE CONFIG_RCU_LAZY CONFIG_LRU_GEN \
+                   CONFIG_MODULE_SCMVERSION CONFIG_HZ CONFIG_LTO_CLANG_FULL; do
+            v=$(scripts/config --file out/.config -s "${s#CONFIG_}" 2>/dev/null || echo "?")
+            echo "  $s = $v"
+          done
+
+      - name: Upload Image
+        uses: actions/upload-artifact@v4
+        with:
+          name: melt-stage2-image
+          path: Image
+          if-no-files-found: error
