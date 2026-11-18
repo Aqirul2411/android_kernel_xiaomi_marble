@@ -17,8 +17,8 @@ on:
     branches: [unbothered-stage2]
 
 env:
-  KSUN_SHA: 39b15dead6fa806cb3582f866b081fa1d9e1c9e4
-  SUSFS_SHA: 784ac9e6fd49bb02499b5b60c57ccc9d0c680204
+  KSUN_SHA: 12f302e0ef88c8719960a1428aac7ef26c4b6eef
+  SUSFS_SHA: 5419f4ee97cc8bf7ca67a9ff207f39653d7784f4
 
 jobs:
   build:
