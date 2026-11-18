@@ -71,6 +71,16 @@ jobs:
           git fetch -q --depth 50 origin "$SUSFS_SHA"
           git checkout -q FETCH_HEAD
           echo "susfs $(git rev-parse --short HEAD)"
+
+          # Context fix, not a fuzz: 5.10.273 added MNT_UMOUNT to this mask in
+          # clone_mnt(), so the SUSFS hunk no longer matches the 274 tree.
+          # Pzqqt's own CI does not hit this because bouquet_ci predates the
+          # 274 merge. One occurrence, context line only, no +/- lines touched.
+          sed -i 's/MNT_WRITE_HOLD|MNT_MARKED|MNT_INTERNAL);/MNT_WRITE_HOLD|MNT_MARKED|MNT_INTERNAL|MNT_UMOUNT);/' \
+            ~/susfs4ksu/kernel_patches/50_add_susfs_in_gki-android12-5.10.patch
+          grep -c 'MNT_INTERNAL|MNT_UMOUNT);' \
+            ~/susfs4ksu/kernel_patches/50_add_susfs_in_gki-android12-5.10.patch
+
           ls kernel_patches/ | head -5
 
       - name: Check out
