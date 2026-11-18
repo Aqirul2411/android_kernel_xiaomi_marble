@@ -81,9 +81,20 @@ jobs:
           ls -l ~/Bouquet_marble_out/ | head -15
           cp -r ~/Bouquet_marble_out/* ~/dist/ 2>/dev/null || { mkdir -p ~/dist; cp -r ~/Bouquet_marble_out/* ~/dist/; }
 
+      - name: Package tools (hdiffz, hpatchz)
+        run: |
+          sudo apt-get install -y --no-install-recommends unzip wget || true
+          mkdir -p ~/.local/bin
+          cd /tmp
+          wget -nv https://github.com/sisong/HDiffPatch/releases/download/v4.12.2/hdiffpatch_v4.12.2_bin_linux64.zip
+          unzip -oq hdiffpatch_v4.12.2_bin_linux64.zip -d /tmp/hd
+          cp -f /tmp/hd/linux64/hdiffz /tmp/hd/linux64/hpatchz ~/.local/bin/
+          chmod +x ~/.local/bin/hdiffz ~/.local/bin/hpatchz
+
       - name: Package with Pzqqt AnyKernel3
         run: |
           set -e
+          export PATH="$HOME/.local/bin:$PATH"
           mkdir -p ~/dist
           git clone -q --depth=1 -b Marble-Bouquet https://github.com/Pzqqt/AnyKernel3.git ~/AnyKernel3
           cd ~/AnyKernel3
