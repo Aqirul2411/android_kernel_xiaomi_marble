@@ -9,6 +9,8 @@ name: Build Unbothered (melt vanilla probe)
 
 on:
   workflow_dispatch:
+  push:
+    branches: [unbothered-vanilla]
 
 jobs:
   build:
