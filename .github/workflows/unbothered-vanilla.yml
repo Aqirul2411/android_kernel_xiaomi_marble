@@ -1,0 +1,77 @@
+name: Build Unbothered (melt vanilla probe)
+
+# Answers one question and nothing else: does the marble vendor tree boot on
+# this phone, packaged the way Pzqqt packages it?
+#
+# No KSU, no SUSFS, no config fragment. Our root stack has repeatedly failed to
+# apply to this tree (SUSFS hunk mismatch, then a partial KSU integration), and
+# debugging that is pointless if the base itself does not boot.
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 240
+    steps:
+      - name: Restore Slim LLVM
+        id: llvm-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/build_toolchain/llvm-23.1.6-x86_64.tar.xz
+          key: llvm-23.1.6-x86_64
+
+      - name: Download Slim LLVM
+        if: steps.llvm-cache.outputs.cache-hit != 'true'
+        run: |
+          sudo apt-get update -o Acquire::Retries=5 || true
+          sudo apt-get install -y --no-install-recommends xz-utils ca-certificates || true
+          mkdir -p ~/build_toolchain && cd ~/build_toolchain
+          ok=0
+          for url in \
+            https://cdn.kernel.org/pub/tools/llvm/files/llvm-23.1.6-x86_64.tar.xz \
+            https://mirrors.edge.kernel.org/pub/tools/llvm/files/llvm-23.1.6-x86_64.tar.xz ; do
+            if curl -fL --retry 4 --retry-delay 5 --connect-timeout 30 --max-time 900 \
+                 -o llvm-23.1.6-x86_64.tar.xz "$url"; then ok=1; break; fi
+          done
+          [ "$ok" = "1" ] || { echo "::error::llvm download failed"; exit 1; }
+
+      - name: Prepare toolchain
+        run: |
+          cd ~/build_toolchain && tar -xJf ./llvm-23.1.6-x86_64.tar.xz
+          sudo apt-get install -y --no-install-recommends python3 python-is-python3 || true
+
+      - name: Check out
+        uses: actions/checkout@v4
+
+      - name: Build Image and modules (vanilla)
+        run: |
+          export PATH="$HOME/build_toolchain/llvm-23.1.6-x86_64/bin:$PATH"
+          chmod +x build_bouquet.sh
+          ./build_bouquet.sh
+          ls -l ~/Bouquet_marble_out/ | head -15
+          mkdir -p ~/dist && cp -r ~/Bouquet_marble_out/* ~/dist/
+
+      - name: Package
+        run: |
+          set -e
+          git clone -q --depth=1 -b Marble-Bouquet https://github.com/Pzqqt/AnyKernel3.git ~/AnyKernel3
+          cd ~/AnyKernel3
+          rm -f ./Image*
+          cp -f ~/dist/devicetree/ukee.dtb   ./_dtb/dtb 2>/dev/null || true
+          cp -f ~/dist/devicetree/dtbo.img    ./_dtb/dtbo.img 2>/dev/null || true
+          cp -f ~/dist/alt_kernel_modules/*   ./_modules_hyperos/_alt/ 2>/dev/null || true
+          cp -f ~/dist/vendor_boot_modules/*  ./_modules_hyperos/_vendor_boot_modules/ 2>/dev/null || true
+          cp -f ~/dist/vendor_dlkm_modules/*  ./_modules_hyperos/_vendor_dlkm_modules/ 2>/dev/null || true
+          cp -f ~/dist/Image ./ 2>/dev/null || true
+          ls -l ./Image* | head -3
+          python3 ./make_package.py "melt-vanilla-${GITHUB_RUN_NUMBER}"
+          ls -l ./*.zip
+
+      - name: Upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: melt-vanilla
+          path: ~/AnyKernel3/*.zip
+          if-no-files-found: error
