@@ -1,0 +1,74 @@
+name: Build Unbothered (melt stage1)
+
+# Stage 1 of moving our layer onto Pzqqt's marble tree: build melt-rebase
+# UNMODIFIED, with his own recipe, and prove the toolchain + marble_defconfig
+# produce an Image in our CI before anything of ours is added.
+#
+# Deliberately no KSU, no SUSFS, no tuning fragment: if this fails, the failure
+# is the base or the toolchain, not our layer.
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [unbothered-stage1]
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    steps:
+      - name: Restore Slim LLVM
+        id: llvm-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/build_toolchain/llvm-23.1.6-x86_64.tar.xz
+          key: llvm-23.1.6-x86_64
+
+      - name: Download Slim LLVM
+        if: steps.llvm-cache.outputs.cache-hit != 'true'
+        run: |
+          sudo apt-get update -o Acquire::Retries=5 || true
+          sudo apt-get install -y --no-install-recommends aria2 xz-utils || true
+          mkdir -p ~/build_toolchain
+          cd ~/build_toolchain
+          aria2c -x4 https://mirrors.edge.kernel.org/pub/tools/llvm/files/llvm-23.1.6-x86_64.tar.xz
+
+      - name: Prepare toolchain
+        run: |
+          mkdir -p ~/.local/bin
+          cd ~/build_toolchain
+          tar -xJf ./llvm-23.1.6-x86_64.tar.xz
+          ls ~/build_toolchain
+
+      - name: Check out
+        uses: actions/checkout@v4
+
+      - name: Fetch build_bouquet.sh from the CI branch
+        run: |
+          git fetch --depth 1 origin bouquet_ci
+          git show FETCH_HEAD:build_bouquet.sh > build_bouquet.sh
+          chmod +x build_bouquet.sh
+          head -3 build_bouquet.sh
+
+      - name: Build Image (vanilla melt-rebase)
+        run: |
+          export PATH="$HOME/build_toolchain/llvm-23.1.6-x86_64/bin:$PATH"
+          ./build_bouquet.sh -- Image
+          ls -l ~/Bouquet_marble_out/ | head -10
+          cp ~/Bouquet_marble_out/Image . || true
+
+      - name: Show resulting config facts
+        run: |
+          for s in CONFIG_SCHED_BORE CONFIG_SCHED_WALT CONFIG_WQ_POWER_EFFICIENT_DEFAULT \
+                   CONFIG_RCU_LAZY CONFIG_LRU_GEN CONFIG_MODULE_SCMVERSION CONFIG_HZ \
+                   CONFIG_KSU CONFIG_KSU_SUSFS; do
+            v=$(scripts/config --file out/.config -s "${s#CONFIG_}" 2>/dev/null || echo "?")
+            echo "  $s = $v"
+          done
+
+      - name: Upload Image
+        uses: actions/upload-artifact@v4
+        with:
+          name: melt-stage1-image
+          path: Image
+          if-no-files-found: error
