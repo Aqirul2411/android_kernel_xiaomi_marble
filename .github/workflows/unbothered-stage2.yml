@@ -86,11 +86,10 @@ jobs:
       - name: Check out
         uses: actions/checkout@v4
 
-      - name: Fetch build_bouquet.sh from the CI branch
-        run: |
-          git fetch --depth 1 origin bouquet_ci
-          git show FETCH_HEAD:build_bouquet.sh > build_bouquet.sh
-          chmod +x build_bouquet.sh
+      # NOTE: this step used to overwrite build_bouquet.sh with Pzqqt's original
+      # from bouquet_ci, which silently discarded the tolerant-apply changes
+      # committed in this branch. The script in the repository is the one that
+      # must build.
 
       - name: Build Image with our KSU-Next + SUSFS
         run: |
