@@ -28,10 +28,24 @@ jobs:
         if: steps.llvm-cache.outputs.cache-hit != 'true'
         run: |
           sudo apt-get update -o Acquire::Retries=5 || true
-          sudo apt-get install -y --no-install-recommends aria2 xz-utils || true
+          sudo apt-get install -y --no-install-recommends xz-utils ca-certificates || true
           mkdir -p ~/build_toolchain
           cd ~/build_toolchain
-          aria2c -x4 https://mirrors.edge.kernel.org/pub/tools/llvm/files/llvm-23.1.6-x86_64.tar.xz
+          # aria2 hit "SSL/TLS handshake failure" against mirrors.edge.kernel.org,
+          # so try several hosts with curl and retries before giving up.
+          ok=0
+          for url in \
+            https://cdn.kernel.org/pub/tools/llvm/files/llvm-23.1.6-x86_64.tar.xz \
+            https://mirrors.edge.kernel.org/pub/tools/llvm/files/llvm-23.1.6-x86_64.tar.xz \
+            https://mirrors.kernel.org/pub/tools/llvm/files/llvm-23.1.6-x86_64.tar.xz ; do
+            echo "trying $url"
+            if curl -fL --retry 4 --retry-delay 5 --connect-timeout 30 \
+                 --max-time 900 -o llvm-23.1.6-x86_64.tar.xz "$url"; then
+              ok=1; break
+            fi
+          done
+          [ "$ok" = "1" ] || { echo "::error::could not download llvm 23.1.6"; exit 1; }
+          ls -l llvm-23.1.6-x86_64.tar.xz
 
       - name: Prepare toolchain
         run: |
