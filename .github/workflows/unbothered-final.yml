@@ -75,6 +75,7 @@ jobs:
       - name: Build Image and modules
         run: |
           export PATH="$HOME/build_toolchain/llvm-23.1.6-x86_64/bin:$PATH"
+          chmod +x build_bouquet.sh
           ./build_bouquet.sh --susfs
           echo "=== output"
           ls -l ~/Bouquet_marble_out/ | head -15
