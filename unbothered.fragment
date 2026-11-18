@@ -1,0 +1,24 @@
+# Unbothered layer, applied on top of arch/arm64/configs/marble_defconfig.
+#
+# Same decisions as the GKI builds, restated for the vendor tree:
+#
+#   BORE off        - default y in the ACK tree, carried by accident there;
+#                     abaddon, templar and Alioth all run without it.
+#   WQ power-eff    - the one config whose purpose is saving power; on in
+#                     abaddon and templar, and the wake stall that made us turn
+#                     it off was traced to zram fault-in, not workqueues.
+#   INIT_ON_ALLOC   - off, like FleurX on this same 5.10.272/274 base.
+#   KSM off         - measured: nothing on this ROM marks memory mergeable, so
+#                     the scanner can never find a duplicate.
+#   HZ 300          - this phone's own value; the vendor tree ships 250.
+#
+# Anything else is the vendor defconfig's business, not ours.
+
+# CONFIG_SCHED_BORE is not set
+CONFIG_WQ_POWER_EFFICIENT_DEFAULT=y
+# CONFIG_INIT_ON_ALLOC_DEFAULT_ON is not set
+# CONFIG_KSM is not set
+
+# CONFIG_HZ_250 is not set
+CONFIG_HZ_300=y
+CONFIG_HZ=300

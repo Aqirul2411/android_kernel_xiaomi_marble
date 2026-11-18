@@ -1,0 +1,105 @@
+name: Build Unbothered (melt final)
+
+# Finalize: marble tree + our root stack + our config, packaged the way
+# Pzqqt packages (Image + vendor modules + dtb/dtbo in his AnyKernel3).
+#
+# This is the first melt artifact that would be flashed, and unlike our GKI
+# zips it writes vendor_boot and vendor_dlkm, not only boot.
+
+on:
+  workflow_dispatch:
+
+env:
+  KSUN_SHA: 12f302e0ef88c8719960a1428aac7ef26c4b6eef
+  SUSFS_SHA: 5419f4ee97cc8bf7ca67a9ff207f39653d7784f4
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 240
+    steps:
+      - name: Restore Slim LLVM
+        id: llvm-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/build_toolchain/llvm-23.1.6-x86_64.tar.xz
+          key: llvm-23.1.6-x86_64
+
+      - name: Download Slim LLVM
+        if: steps.llvm-cache.outputs.cache-hit != 'true'
+        run: |
+          sudo apt-get update -o Acquire::Retries=5 || true
+          sudo apt-get install -y --no-install-recommends xz-utils ca-certificates || true
+          mkdir -p ~/build_toolchain && cd ~/build_toolchain
+          ok=0
+          for url in \
+            https://cdn.kernel.org/pub/tools/llvm/files/llvm-23.1.6-x86_64.tar.xz \
+            https://mirrors.edge.kernel.org/pub/tools/llvm/files/llvm-23.1.6-x86_64.tar.xz \
+            https://mirrors.kernel.org/pub/tools/llvm/files/llvm-23.1.6-x86_64.tar.xz ; do
+            if curl -fL --retry 4 --retry-delay 5 --connect-timeout 30 --max-time 900 \
+                 -o llvm-23.1.6-x86_64.tar.xz "$url"; then ok=1; break; fi
+          done
+          [ "$ok" = "1" ] || { echo "::error::llvm download failed"; exit 1; }
+
+      - name: Prepare toolchain
+        run: |
+          mkdir -p ~/.local/bin
+          cd ~/build_toolchain && tar -xJf ./llvm-23.1.6-x86_64.tar.xz
+          sudo apt-get install -y --no-install-recommends python3 python-is-python3 || true
+
+      - name: Fetch our pinned root stack
+        run: |
+          set -e
+          git init -q ~/KernelSU && cd ~/KernelSU
+          git remote add origin https://github.com/pershoot/KernelSU-Next.git
+          git fetch -q --depth 50 origin "$KSUN_SHA" && git checkout -q FETCH_HEAD
+          echo "KernelSU-Next $(git rev-parse --short HEAD)"
+
+          git init -q ~/susfs4ksu && cd ~/susfs4ksu
+          git remote add origin https://gitlab.com/simonpunk/susfs4ksu.git
+          git fetch -q --depth 50 origin "$SUSFS_SHA" && git checkout -q FETCH_HEAD
+          echo "susfs $(git rev-parse --short HEAD)"
+
+          sed -i 's/MNT_WRITE_HOLD|MNT_MARKED|MNT_INTERNAL);/MNT_WRITE_HOLD|MNT_MARKED|MNT_INTERNAL|MNT_UMOUNT);/' \
+            ~/susfs4ksu/kernel_patches/50_add_susfs_in_gki-android12-5.10.patch
+
+      - name: Check out
+        uses: actions/checkout@v4
+
+      - name: Apply our config on marble_defconfig
+        run: |
+          echo "=== appending our fragment to marble_defconfig"
+          cat unbothered.fragment >> arch/arm64/configs/marble_defconfig
+          tail -12 arch/arm64/configs/marble_defconfig
+
+      - name: Build Image and modules
+        run: |
+          export PATH="$HOME/build_toolchain/llvm-23.1.6-x86_64/bin:$PATH"
+          ./build_bouquet.sh --susfs
+          echo "=== output"
+          ls -l ~/Bouquet_marble_out/ | head -15
+          cp -r ~/Bouquet_marble_out/* ~/dist/ 2>/dev/null || { mkdir -p ~/dist; cp -r ~/Bouquet_marble_out/* ~/dist/; }
+
+      - name: Package with Pzqqt AnyKernel3
+        run: |
+          set -e
+          mkdir -p ~/dist
+          git clone -q --depth=1 -b Marble-Bouquet https://github.com/Pzqqt/AnyKernel3.git ~/AnyKernel3
+          cd ~/AnyKernel3
+          rm -f ./Image*
+          cp -f ~/dist/devicetree/ukee.dtb   ./_dtb/dtb 2>/dev/null || true
+          cp -f ~/dist/devicetree/dtbo.img    ./_dtb/dtbo.img 2>/dev/null || true
+          cp -f ~/dist/alt_kernel_modules/*   ./_modules_hyperos/_alt/ 2>/dev/null || true
+          cp -f ~/dist/vendor_boot_modules/*  ./_modules_hyperos/_vendor_boot_modules/ 2>/dev/null || true
+          cp -f ~/dist/vendor_dlkm_modules/*  ./_modules_hyperos/_vendor_dlkm_modules/ 2>/dev/null || true
+          cp -f ~/dist/Image_susfs* ./ 2>/dev/null || cp -f ~/dist/Image ./ || true
+          ls -l ./Image* | head -3
+          python3 ./make_package.py "unbothered-melt-${GITHUB_RUN_NUMBER}"
+          ls -l ./*.zip
+
+      - name: Upload zip
+        uses: actions/upload-artifact@v4
+        with:
+          name: unbothered-melt
+          path: ~/AnyKernel3/*.zip
+          if-no-files-found: error
