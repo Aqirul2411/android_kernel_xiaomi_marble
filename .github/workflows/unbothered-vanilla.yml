@@ -66,6 +66,19 @@ jobs:
           chmod +x ~/.local/bin/hdiffz ~/.local/bin/hpatchz
           ~/.local/bin/hdiffz -h 2>&1 | head -2 || true
 
+      - name: Fetch tiann KernelSU
+        run: |
+          git clone -q --depth=1 https://github.com/tiann/KernelSU.git ~/KernelSU
+          echo "KernelSU $(git -C ~/KernelSU rev-parse --short HEAD)"
+
+      - name: Build Image with KernelSU
+        run: |
+          export PATH="$HOME/build_toolchain/llvm-23.1.6-x86_64/bin:$PATH"
+          ./build_bouquet.sh --noclean --ksu -- Image
+          ls -l ~/Bouquet_marble_out/ | head -12
+          cp -f ~/Bouquet_marble_out/Image_ksu* ~/dist/ 2>/dev/null || true
+          ls -l ~/dist/Image* | head -4
+
       - name: Package
         run: |
           set -e
