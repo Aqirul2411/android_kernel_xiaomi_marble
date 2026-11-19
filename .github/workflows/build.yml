@@ -114,6 +114,6 @@ jobs:
       - name: Upload artifacts
         uses: actions/upload-artifact@v7
         with:
-          path: ~/AnyKernel3/Unbothered-melt-${{ env.BUILD_DATE }}-${{ env.SHORT_SHA }}.zip
+          path: ~/AnyKernel3/*.zip
           if-no-files-found: error
           archive: false
